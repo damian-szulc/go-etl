@@ -20,6 +20,7 @@ func newLoaderOptions(optsSetters ...LoaderOption) *loaderOptions {
 	opts := &loaderOptions{
 		drainer:     func(ctx context.Context, inMsgCh <-chan Message) []Message { return nil },
 		concurrency: 1,
+		failOnErr:   true,
 	}
 
 	for _, setter := range optsSetters {

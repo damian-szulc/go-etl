@@ -1,6 +1,8 @@
 package etl
 
-import "context"
+import (
+	"context"
+)
 
 type TransformerSender interface {
 	// Sends message to the first output channel
@@ -41,7 +43,7 @@ func (s transformerSender) Send(ctx context.Context, payload interface{}) error 
 }
 
 func (s transformerSender) SendCh(ctx context.Context, channelNr uint, payload interface{}) error {
-	if len(s.outputChs) > int(channelNr) {
+	if len(s.outputChs) < int(channelNr) {
 		return ErrOutputMessageOutOfChannelsRange
 	}
 

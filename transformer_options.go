@@ -15,6 +15,7 @@ type transformerOptions struct {
 func newTransformerOptions(optsSetters ...TransformerOption) *transformerOptions {
 	opts := &transformerOptions{
 		concurrency: 1,
+		failOnErr:   true,
 	}
 
 	for _, setter := range optsSetters {
