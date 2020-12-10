@@ -2,6 +2,17 @@
 
 Go utility to develop and run ETL pipelines. Remove boilerplate related to creating new goroutines, closing channels, graceful exits, etc. It also provides primitives to handle errors, measure and monitor execution time.
 
+## Why
+
+When building ETL pipeline (or fan in/out pipeline), one must take following considerations into an account:
+
+* **concurrency** - ability to control concurrency,
+* **error handling** - handle panics and any arbitrary errors, without affecting the entire processor,
+* **graceful exit** - ability to exit if necessary, without leaving processor stuck,
+* **observability** - measuring and exposing throughput, processing time, error rates etc.
+
+Usually there is a lot of boilerplate code involved. This package aims at addressing issues above.
+
 ## Example usage
 
 ```go
@@ -9,8 +20,7 @@ import (
     "github.com/damian-szulc/go-etl"
 )
 
-// Controller
-
+// Controller contains use-case specific logic. All methods should be safe to run concurrently
 type Controller struct {}
 
 func (c *Controller) Extract(ctx context.Context, sender etl.ExtractorSender) error {
@@ -24,7 +34,7 @@ func (c *Controller) Transform(ctx context.Context, inMsg etl.Message, sender et
 	}
 
 	// process
-	data = data * 2
+	data = process(data)
 
 	// send
 	return sender.Send(ctx, data)
@@ -33,11 +43,11 @@ func (c *Controller) Transform(ctx context.Context, inMsg etl.Message, sender et
 func (c *Controller) Load(ctx context.Context, messages []etl.Message) error {
 	// store
 }
+
 ....
 
-// Runner
-
-func Run(ctx context.Context) {
+// Runner starts processing
+func Run(ctx context.Context) error {
 	controller := &Controller{}
 
 	extractor := etl.NewExtractor(
