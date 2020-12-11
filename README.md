@@ -12,8 +12,8 @@
 When building ETL pipeline (or fan in/out pipeline), one must take following considerations into an account:
 
 * **concurrency** - ability to control concurrency,
-* **error handling** - handle panics and any arbitrary errors, without affecting the entire processor,
-* **graceful exit** - ability to exit if necessary, without leaving processor stuck,
+* **error handling** - handle panics and any arbitrary errors gracefully,
+* **graceful exit** - ability to exit if necessary, without getting stuck,
 * **observability** - measuring and exposing throughput, processing time, error rates etc.
 
 Usually there is a lot of boilerplate code involved. This package aims at addressing issues above.
