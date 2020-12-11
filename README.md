@@ -1,5 +1,5 @@
 <h1 align="center">
-  ETL utilities for Go
+  go-etl
 </h1>
 
 <p align="center">
