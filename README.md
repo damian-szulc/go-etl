@@ -25,55 +25,55 @@ type Controller struct {}
 
 func (c *Controller) Extract(ctx context.Context, sender etl.Sender) error {
     // here should be a daemon that seeds messages to the pipe
-	return sender.Send(ctx, 1)
+    return sender.Send(ctx, 1)
 }
 
 func (c *Controller) Transform(ctx context.Context, inMsg etl.Message, sender etl.Sender) error {
-	data, ok := inMsg.Payload().(int)
-	if !ok {
-		return etl.ErrCastingFailed
-	}
+    data, ok := inMsg.Payload().(int)
+    if !ok {
+        return etl.ErrCastingFailed
+    }
 
-	// process
-	data = process(data)
+    // process
+    data = process(data)
 
-	// send
-	return sender.Send(ctx, data)
+    // send
+    return sender.Send(ctx, data)
 }
 
 func (c *Controller) Load(ctx context.Context, message etl.Message) error {
-	// store
+    // store
 }
 
 ...
 
 // Runner starts processing
 func Run(ctx context.Context) error {
-	controller := &Controller{}
+    controller := &Controller{}
     
     // create an extractor that will seed items into the pipeline
-	extractor := etl.NewExtractor(
-		controller.Extract,
-	)
+    extractor := etl.NewExtractor(
+        controller.Extract,
+    )
 
     // create a transformer that will perform operation on seeded data
-	transformer := etl.NewTransformer(
-		extractor.OutputCh(), // channel with incoming messages 
-		controller.Transform, // handler to perform transformation
-		etl.TransformerWithConcurrency(10), // run handler in 10 goroutines
-		etl.TransformerWithFailOnErr(false), // if encounter an error during processing, ignore it. By default it exits processing
-		etl.TransformerWithOutputChannelBufferSize(10), // create output channel with buffer size of 10
-	)
+    transformer := etl.NewTransformer(
+        extractor.OutputCh(), // channel with incoming messages 
+        controller.Transform, // handler to perform transformation
+        etl.TransformerWithConcurrency(10), // run handler in 10 goroutines
+        etl.TransformerWithFailOnErr(false), // if encounter an error during processing, ignore it. By default it exits processing
+        etl.TransformerWithOutputChannelBufferSize(10), // create output channel with buffer size of 10
+    )
     
     // create a loader that will store results 
-	loader := etl.NewLoader(
-		transformer.OutputCh(), // channel with data to store
-		controller.Load, // handler to store data
-		etl.LoaderWithConcurrency(10), // run handler in 10 goroutines
-		etl.LoaderWithFailOnErr(true), // if encounter an error, exit
-	)
+    loader := etl.NewLoader(
+        transformer.OutputCh(), // channel with data to store
+        controller.Load, // handler to store data
+        etl.LoaderWithConcurrency(10), // run handler in 10 goroutines
+        etl.LoaderWithFailOnErr(true), // if encounter an error, exit
+    )
 
-	return etl.RunAll(ctx, extractor, transformer, loader)
+    return etl.RunAll(ctx, extractor, transformer, loader)
 }
 ```
 
