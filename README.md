@@ -57,7 +57,7 @@ func Run(ctx context.Context) error {
 	transformer := etl.NewTransformer(
 		extractor.OutputCh(),
 		controller.Transform,
-		etl.TransformerWithConcurrency(10),
+		etl.TransformerWithConcurrency(10), 
         etl.TransformerWithFailOnErr(false),
 		etl.TransformerWithOnErrorHook(controller.OnTransformerError),
 		etl.TransformerWithOnCompleteHook(controller.OnTransformerComplete),
@@ -101,7 +101,7 @@ loader := etl.NewLoaderBatched(
 
 Following batching strategies are available:
 
-1. `etl.LoaderBatchedWithFixedSizeBatches` - collects incoming messages until specified amount is reached. Last batch before closing might contain less item. 
+1. `etl.LoaderBatchedWithFixedSizeBatches` - collects incoming messages until specified amount is reached. Last batch before closing might contain less items. 
 2. `etl.LoaderBatchedWithDrainedChannelBatches` - after receiving first message drains input channel, up to `maxItems` in batch. If channel is empty, returns collected messages right away. It works specifically well with buffered incoming channels.
 3. `etl.LoaderBatchedWithThrottledBatches` - performs throttling on received messages, up until it collected maximum items per batch. (In other words, after receiving first message, it collects incoming messages for specified amount of time) 
 4. `etl.LoaderBatchedWithDebouncedBatches` - performs a debouncing on received messages, up until it collected maximum items per batch. (In other words, it collects messages until encountered inactivity for a specified amount of time, or maximum batch size has been reached) 
@@ -157,7 +157,7 @@ transformer := etl.NewTransformerDemux(
 
 ## Observability
 
-Having an insight into production state of a pipeline might be critical for successfully running pipeline in production environment. `go-etl` allows injecting hooks, where you can perform logging, instrumentation, etc.
+Having an insight into state of a pipeline might be critical for successfully running pipeline in production environment. `go-etl` allows injecting hooks, where you can perform logging, instrumentation, etc. Message must implement basic timing methods.
 
 ```go
 // controller
