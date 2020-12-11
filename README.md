@@ -24,6 +24,7 @@ import (
 type Controller struct {}
 
 func (c *Controller) Extract(ctx context.Context, sender etl.Sender) error {
+    // here should be a daemon that seeds messages to the pipe
 	return sender.Send(ctx, 1)
 }
 
@@ -49,24 +50,27 @@ func (c *Controller) Load(ctx context.Context, message etl.Message) error {
 // Runner starts processing
 func Run(ctx context.Context) error {
 	controller := &Controller{}
-
+    
+    // create an extractor that will seed items into the pipeline
 	extractor := etl.NewExtractor(
 		controller.Extract,
 	)
 
+    // create a transformer that will perform operation on seeded data
 	transformer := etl.NewTransformer(
-		extractor.OutputCh(),
-		controller.Transform,
-		etl.TransformerWithConcurrency(10), 
-		etl.TransformerWithFailOnErr(false),
-		etl.TransformerWithOutputChannelBufferSize(10),
+		extractor.OutputCh(), // channel with incoming messages 
+		controller.Transform, // handler to perform transformation
+		etl.TransformerWithConcurrency(10), // run handler in 10 goroutines
+		etl.TransformerWithFailOnErr(false), // if encounter an error during processing, ignore it. By default it exits processing
+		etl.TransformerWithOutputChannelBufferSize(10), // create output channel with buffer size of 10
 	)
-
+    
+    // create a loader that will store results 
 	loader := etl.NewLoader(
-		transformer.OutputCh(),
-		controller.Load,
-		etl.LoaderWithConcurrency(10),
-		etl.LoaderWithFailOnErr(true),
+		transformer.OutputCh(), // channel with data to store
+		controller.Load, // handler to store data
+		etl.LoaderWithConcurrency(10), // run handler in 10 goroutines
+		etl.LoaderWithFailOnErr(true), // if encounter an error, exit
 	)
 
 	return etl.RunAll(ctx, extractor, transformer, loader)
@@ -155,7 +159,8 @@ Having an insight into state of a pipeline might be critical for successfully ru
 // controller
 
 func (c *Controller) OnLoaderCompletefunc(ctx context.Context, inMsg Message) {
-	c.metrics.ProcessingCompleted(
+    c.metrics.ProcessingCompleted(
+        // time from the start of processing
         time.Since(inMsg.ProcessingStartedAt()).Seconds()
     )
 }
@@ -163,7 +168,7 @@ func (c *Controller) OnLoaderCompletefunc(ctx context.Context, inMsg Message) {
 func (c *Controller) OnLoaderErrorHook(ctx context.Context, inMsg Message, err error) {
     c.log.Error(err.String())
 
-	c.metrics.ProcessingFailed()
+    c.metrics.ProcessingFailed()
 }
 
 ...
