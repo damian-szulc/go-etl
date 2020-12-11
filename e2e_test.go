@@ -23,8 +23,8 @@ func TestETL_BasePipeline(t *testing.T) {
 
 	extractor := etl.NewExtractor(newFakeExtractor(1, 2))
 	transformer := etl.NewTransformer(extractor.OutputCh(), fakeTransformer)
-	l := &fakeLoader{}
-	loader := etl.NewLoader(transformer.OutputCh(), l.Handle)
+	l := &fakeLoaderBatched{}
+	loader := etl.NewLoaderBatched(transformer.OutputCh(), l.Handle)
 
 	err := etl.RunAll(ctx, extractor, transformer, loader)
 	require.NoError(t, err)
@@ -40,8 +40,8 @@ func TestETL_PipelineWithBatchedLoader(t *testing.T) {
 
 	extractor := etl.NewExtractor(newFakeExtractor(1, 2))
 	transformer := etl.NewTransformer(extractor.OutputCh(), fakeTransformer)
-	l := &fakeLoader{}
-	loader := etl.NewLoader(transformer.OutputCh(), l.Handle, etl.LoaderWithChannelTimeDrainer(time.Second, 2))
+	l := &fakeLoaderBatched{}
+	loader := etl.NewLoaderBatched(transformer.OutputCh(), l.Handle, etl.LoaderBatchedWithChannelTimeBatcher(time.Second, 2))
 
 	err := etl.RunAll(ctx, extractor, transformer, loader)
 	require.NoError(t, err)
@@ -57,8 +57,8 @@ func TestETL_PipelineWithIncreaseConcurrency(t *testing.T) {
 
 	extractor := etl.NewExtractor(newFakeExtractor(1, 2))
 	transformer := etl.NewTransformer(extractor.OutputCh(), fakeTransformer, etl.TransformerWithConcurrency(2))
-	l := &fakeLoader{}
-	loader := etl.NewLoader(transformer.OutputCh(), l.Handle)
+	l := &fakeLoaderBatched{}
+	loader := etl.NewLoaderBatched(transformer.OutputCh(), l.Handle)
 
 	err := etl.RunAll(ctx, extractor, transformer, loader)
 	require.NoError(t, err)

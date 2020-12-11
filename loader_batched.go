@@ -6,20 +6,20 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-type LoaderHandler func(ctx context.Context, message Message) error
+type LoaderBatchedHandler func(ctx context.Context, messages []Message) error
 
-type Loader struct {
-	handler LoaderHandler
+type LoaderBatched struct {
+	handler LoaderBatchedHandler
 
 	inputCh <-chan Message
 
-	opts *loaderOptions
+	opts *loaderBatchedOptions
 }
 
-func NewLoader(inputCh <-chan Message, handler LoaderHandler, optsSetters ...LoaderOption) *Loader {
-	opts := newLoaderOptions(optsSetters...)
+func NewLoaderBatched(inputCh <-chan Message, handler LoaderBatchedHandler, optsSetters ...LoaderBatchedOption) *LoaderBatched {
+	opts := newLoaderBatchedOptions(optsSetters...)
 
-	return &Loader{
+	return &LoaderBatched{
 		handler: handler,
 
 		inputCh: inputCh,
@@ -28,7 +28,7 @@ func NewLoader(inputCh <-chan Message, handler LoaderHandler, optsSetters ...Loa
 	}
 }
 
-func (l *Loader) preRunHooks(ctx context.Context) error {
+func (l *LoaderBatched) preRunHooks(ctx context.Context) error {
 	var err error
 	for _, hook := range l.opts.hooksPreRun {
 		err = hook(ctx, l.inputCh)
@@ -40,7 +40,7 @@ func (l *Loader) preRunHooks(ctx context.Context) error {
 	return nil
 }
 
-func (l *Loader) Run(ctx context.Context) error {
+func (l *LoaderBatched) Run(ctx context.Context) error {
 	err := l.preRunHooks(ctx)
 	if err != nil {
 		return errors.Wrap(err, "failed to run batched loader preRunHooks")
@@ -61,10 +61,10 @@ func (l *Loader) Run(ctx context.Context) error {
 	return g.Wait()
 }
 
-func (l *Loader) onErrorHook(ctx context.Context, inMsg Message, opErr error) error {
+func (l *LoaderBatched) onErrorHook(ctx context.Context, inMsgs []Message, opErr error) error {
 	var err error
 	for _, hook := range l.opts.hooksOnError {
-		err = hook(ctx, inMsg, opErr)
+		err = hook(ctx, inMsgs, opErr)
 		if err != nil {
 			return err
 		}
@@ -73,10 +73,10 @@ func (l *Loader) onErrorHook(ctx context.Context, inMsg Message, opErr error) er
 	return nil
 }
 
-func (l *Loader) onCompleteHook(ctx context.Context, inMsg Message) error {
+func (l *LoaderBatched) onCompleteHook(ctx context.Context, inMsgs []Message) error {
 	var err error
 	for _, hook := range l.opts.hooksOnComplete {
-		err = hook(ctx, inMsg)
+		err = hook(ctx, inMsgs)
 		if err != nil {
 			return err
 		}
@@ -85,12 +85,13 @@ func (l *Loader) onCompleteHook(ctx context.Context, inMsg Message) error {
 	return nil
 }
 
-func (l *Loader) runWorker(ctx context.Context) error {
+func (l *LoaderBatched) runWorker(ctx context.Context) error {
 	var (
-		inMsg Message
-		ok    bool
-		opErr error
-		err   error
+		inMsgs []Message
+		inMsg  Message
+		ok     bool
+		opErr  error
+		err    error
 	)
 	for {
 		select {
@@ -101,11 +102,14 @@ func (l *Loader) runWorker(ctx context.Context) error {
 				return nil
 			}
 
-			opErr = l.handler(ctx, inMsg)
+			inMsgs = l.opts.batcher(ctx, l.inputCh)
+			inMsgs = append(inMsgs, inMsg)
+
+			opErr = l.handler(ctx, inMsgs)
 			if opErr != nil {
-				err = l.onErrorHook(ctx, inMsg, opErr)
+				err = l.onErrorHook(ctx, inMsgs, opErr)
 				if err != nil {
-					return errors.Wrap(err, "running loader on error hook has failed")
+					return errors.Wrap(err, "running batched loader on error hook has failed")
 				}
 
 				if l.opts.failOnErr {
@@ -113,7 +117,7 @@ func (l *Loader) runWorker(ctx context.Context) error {
 				}
 			}
 
-			err = l.onCompleteHook(ctx, inMsg)
+			err = l.onCompleteHook(ctx, inMsgs)
 			if err != nil {
 				return errors.Wrap(err, "failed to run loader onComplete hook")
 			}

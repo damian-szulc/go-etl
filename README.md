@@ -40,7 +40,7 @@ func (c *Controller) Transform(ctx context.Context, inMsg etl.Message, sender et
 	return sender.Send(ctx, data)
 }
 
-func (c *Controller) Load(ctx context.Context, messages []etl.Message) error {
+func (c *Controller) Load(ctx context.Context, message etl.Message) error {
 	// store
 }
 
@@ -69,7 +69,6 @@ func Run(ctx context.Context) error {
 		etl.LoaderWithConcurrency(10),
 		etl.LoaderWithOnCompleteHook(controller.OnLoaderCompleteHook),
 		etl.LoaderWithOnErrorHook(controller.OnLoaderErrorHook),
-		etl.LoaderWithChannelTimeDrainer(time.Second, 100),
 	)
 
 	return etl.RunAll(ctx, extractor, transformer, loader)
