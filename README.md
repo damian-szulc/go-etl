@@ -196,5 +196,5 @@ MIT
 
 - [ ] Add logger support
 - [ ] When "failing" by default is disabled and there are no error hooks, log errors
-- [ ] Add transformer tests
+- [ ] More tests
 - [ ] Add GoDoc comments
