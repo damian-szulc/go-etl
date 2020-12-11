@@ -58,9 +58,7 @@ func Run(ctx context.Context) error {
 		extractor.OutputCh(),
 		controller.Transform,
 		etl.TransformerWithConcurrency(10), 
-        etl.TransformerWithFailOnErr(false),
-		etl.TransformerWithOnErrorHook(controller.OnTransformerError),
-		etl.TransformerWithOnCompleteHook(controller.OnTransformerComplete),
+		etl.TransformerWithFailOnErr(false),
 		etl.TransformerWithOutputChannelBufferSize(10),
 	)
 
@@ -69,8 +67,6 @@ func Run(ctx context.Context) error {
 		controller.Load,
 		etl.LoaderWithConcurrency(10),
 		etl.LoaderWithFailOnErr(true),
-		etl.LoaderWithOnCompleteHook(controller.OnLoaderCompleteHook),
-		etl.LoaderWithOnErrorHook(controller.OnLoaderErrorHook),
 	)
 
 	return etl.RunAll(ctx, extractor, transformer, loader)
@@ -91,9 +87,7 @@ loader := etl.NewLoaderBatched(
         controller.Load,
         etl.LoaderBatchedWithConcurrency(10),
         etl.LoaderWithFailOnErr(true),
-        etl.LoaderBatchedWithOnCompleteHook(controller.OnLoaderBatchedCompleteHook),
-        etl.LoaderBatchedWithOnErrorHook(controller.OnLoaderBatchedErrorHook),
-        etl.LoaderBatchedWithMaxItemsBatcher(100),
+        etl.LoaderBatchedWithFixedSizeBatches(100),
     )
 
 ...
@@ -147,8 +141,6 @@ transformer := etl.NewTransformerDemux(
     2, // number of output channels
     etl.TransformerWithConcurrency(10),
     etl.TransformerWithFailOnErr(false),
-    etl.TransformerWithOnErrorHook(controller.OnTransformerError),
-    etl.TransformerWithOnCompleteHook(controller.OnTransformerComplete),
     etl.TransformerWithOutputChannelBufferSize(10),
 )
 
