@@ -5,6 +5,7 @@
 <p align="center">
   Go utilities to develop and run ETL pipelines. Remove boilerplate related to creating new goroutines, closing channels, handling errors, graceful exits, etc. Leverage hooks to gain insight into pipeline in a production environment.  
 </p>
+<br/>
 
 ## Why
 
