@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-func fakeTransformer(ctx context.Context, inMsg etl.Message, sender etl.TransformerSender) error {
+func fakeTransformer(ctx context.Context, inMsg etl.Message, sender etl.Sender) error {
 	data, ok := inMsg.Payload().(int)
 	if !ok {
 		return etl.ErrCastingFailed

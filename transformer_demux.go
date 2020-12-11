@@ -6,9 +6,14 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-type TransformerHandler func(ctx context.Context, inMsg Message, sender TransformerSender) error
+type TransformerHandler func(ctx context.Context, inMsg Message, sender Sender) error
 
-type TransformerDemux struct {
+type TransformerDemux interface {
+	Runner
+	OutputCh(i int) <-chan Message
+}
+
+type transformerDemux struct {
 	handler TransformerHandler
 
 	inputCh     <-chan Message
@@ -18,7 +23,7 @@ type TransformerDemux struct {
 	opts *transformerOptions
 }
 
-func NewTransformerDemux(inputCh <-chan Message, handler TransformerHandler, outputChannelsNr uint, optsSetters ...TransformerOption) *TransformerDemux {
+func NewTransformerDemux(inputCh <-chan Message, handler TransformerHandler, outputChannelsNr uint, optsSetters ...TransformerOption) TransformerDemux {
 	opts := newTransformerOptions(optsSetters...)
 
 	var outputChs = make([]chan Message, outputChannelsNr)
@@ -26,7 +31,7 @@ func NewTransformerDemux(inputCh <-chan Message, handler TransformerHandler, out
 		outputChs[i] = make(chan Message, opts.outputChannelBufferSize)
 	}
 
-	return &TransformerDemux{
+	return &transformerDemux{
 		handler: handler,
 
 		inputCh:     inputCh,
@@ -37,7 +42,7 @@ func NewTransformerDemux(inputCh <-chan Message, handler TransformerHandler, out
 	}
 }
 
-func (t *TransformerDemux) OutputCh(i int) <-chan Message {
+func (t *transformerDemux) OutputCh(i int) <-chan Message {
 	if i > len(t.outputChs) || i < 0 {
 		panic(ErrOutputMessageOutOfChannelsRange)
 	}
@@ -45,7 +50,7 @@ func (t *TransformerDemux) OutputCh(i int) <-chan Message {
 	return t.outputChs[i]
 }
 
-func (t *TransformerDemux) preRunHooks(ctx context.Context) error {
+func (t *transformerDemux) preRunHooks(ctx context.Context) error {
 	var err error
 	for _, hook := range t.opts.hooksPreRun {
 		err = hook(ctx, t.inputCh)
@@ -57,13 +62,13 @@ func (t *TransformerDemux) preRunHooks(ctx context.Context) error {
 	return nil
 }
 
-func (t *TransformerDemux) closeChannels(chs []chan Message) {
+func (t *transformerDemux) closeChannels(chs []chan Message) {
 	for _, ch := range chs {
 		close(ch)
 	}
 }
 
-func (t *TransformerDemux) Run(ctx context.Context) error {
+func (t *transformerDemux) Run(ctx context.Context) error {
 	err := t.preRunHooks(ctx)
 	if err != nil {
 		return errors.Wrap(err, "failed to run transformer preRunHooks")
@@ -84,7 +89,7 @@ func (t *TransformerDemux) Run(ctx context.Context) error {
 	return g.Wait()
 }
 
-func (t *TransformerDemux) onErrorHook(ctx context.Context, inMsg Message, opErr error) error {
+func (t *transformerDemux) onErrorHook(ctx context.Context, inMsg Message, opErr error) error {
 	var err error
 	for _, hook := range t.opts.hooksOnError {
 		err = hook(ctx, inMsg, opErr)
@@ -96,9 +101,27 @@ func (t *TransformerDemux) onErrorHook(ctx context.Context, inMsg Message, opErr
 	return nil
 }
 
-func (t *TransformerDemux) runWorker(ctx context.Context) error {
+func (t *transformerDemux) newTransformerSender(inMsg Message) Sender {
+	return newSender(
+		t.outputChs,
+		[]MessageOption{MessageWithProcessingStartedAt(inMsg.ProcessingStartedAt())},
+		func(ctx context.Context, outMsg Message, outChNr uint) error {
+			var err error
+			for _, hook := range t.opts.hooksOnComplete {
+				err = hook(ctx, inMsg, outMsg, outChNr)
+				if err != nil {
+					return err
+				}
+			}
+
+			return nil
+		},
+	)
+}
+
+func (t *transformerDemux) runWorker(ctx context.Context) error {
 	var (
-		sender transformerSender
+		sender Sender
 
 		inMsg Message
 		ok    bool
@@ -114,7 +137,7 @@ func (t *TransformerDemux) runWorker(ctx context.Context) error {
 				return nil
 			}
 
-			sender = newTransformerSender(inMsg, t.outputChs, t.opts.hooksOnComplete)
+			sender = t.newTransformerSender(inMsg)
 
 			opErr = t.handler(ctx, inMsg, sender)
 			if opErr != nil {

@@ -8,7 +8,11 @@ import (
 
 type LoaderHandler func(ctx context.Context, message Message) error
 
-type Loader struct {
+type Loader interface {
+	Runner
+}
+
+type loader struct {
 	handler LoaderHandler
 
 	inputCh <-chan Message
@@ -16,10 +20,10 @@ type Loader struct {
 	opts *loaderOptions
 }
 
-func NewLoader(inputCh <-chan Message, handler LoaderHandler, optsSetters ...LoaderOption) *Loader {
+func NewLoader(inputCh <-chan Message, handler LoaderHandler, optsSetters ...LoaderOption) Loader {
 	opts := newLoaderOptions(optsSetters...)
 
-	return &Loader{
+	return &loader{
 		handler: handler,
 
 		inputCh: inputCh,
@@ -28,7 +32,7 @@ func NewLoader(inputCh <-chan Message, handler LoaderHandler, optsSetters ...Loa
 	}
 }
 
-func (l *Loader) preRunHooks(ctx context.Context) error {
+func (l *loader) preRunHooks(ctx context.Context) error {
 	var err error
 	for _, hook := range l.opts.hooksPreRun {
 		err = hook(ctx, l.inputCh)
@@ -41,7 +45,7 @@ func (l *Loader) preRunHooks(ctx context.Context) error {
 }
 
 // Run loader with a specified context. Note that execution of this function is blocking, until processing is finished.
-func (l *Loader) Run(ctx context.Context) error {
+func (l *loader) Run(ctx context.Context) error {
 	err := l.preRunHooks(ctx)
 	if err != nil {
 		return errors.Wrap(err, "failed to run batched loader preRunHooks")
@@ -62,7 +66,7 @@ func (l *Loader) Run(ctx context.Context) error {
 	return g.Wait()
 }
 
-func (l *Loader) onErrorHook(ctx context.Context, inMsg Message, opErr error) error {
+func (l *loader) onErrorHook(ctx context.Context, inMsg Message, opErr error) error {
 	var err error
 	for _, hook := range l.opts.hooksOnError {
 		err = hook(ctx, inMsg, opErr)
@@ -74,7 +78,7 @@ func (l *Loader) onErrorHook(ctx context.Context, inMsg Message, opErr error) er
 	return nil
 }
 
-func (l *Loader) onCompleteHook(ctx context.Context, inMsg Message) error {
+func (l *loader) onCompleteHook(ctx context.Context, inMsg Message) error {
 	var err error
 	for _, hook := range l.opts.hooksOnComplete {
 		err = hook(ctx, inMsg)
@@ -86,7 +90,7 @@ func (l *Loader) onCompleteHook(ctx context.Context, inMsg Message) error {
 	return nil
 }
 
-func (l *Loader) runWorker(ctx context.Context) error {
+func (l *loader) runWorker(ctx context.Context) error {
 	var (
 		inMsg Message
 		ok    bool

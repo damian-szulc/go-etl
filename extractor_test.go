@@ -9,7 +9,7 @@ import (
 )
 
 func newFakeExtractor(payload ...interface{}) etl.ExtractorHandler {
-	return func(ctx context.Context, sender etl.ExtractorSender) error {
+	return func(ctx context.Context, sender etl.Sender) error {
 		for _, p := range payload {
 			err := sender.Send(ctx, p)
 			if err != nil {
@@ -52,7 +52,7 @@ func TestExtractor_FailsWhenHandlerReturnsError(t *testing.T) {
 	defer cancel()
 
 	errTest := errors.New("test")
-	extractor := etl.NewExtractor(func(ctx context.Context, sender etl.ExtractorSender) error {
+	extractor := etl.NewExtractor(func(ctx context.Context, sender etl.Sender) error {
 		return errTest
 	})
 
