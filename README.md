@@ -23,11 +23,11 @@ import (
 // Controller contains use-case specific logic. All methods should be safe to run concurrently
 type Controller struct {}
 
-func (c *Controller) Extract(ctx context.Context, sender etl.ExtractorSender) error {
+func (c *Controller) Extract(ctx context.Context, sender etl.Sender) error {
 	return sender.Send(ctx, 1)
 }
 
-func (c *Controller) Transform(ctx context.Context, inMsg etl.Message, sender etl.TransformerSender) error {
+func (c *Controller) Transform(ctx context.Context, inMsg etl.Message, sender etl.Sender) error {
 	data, ok := inMsg.Payload().(int)
 	if !ok {
 		return etl.ErrCastingFailed
@@ -44,7 +44,7 @@ func (c *Controller) Load(ctx context.Context, message etl.Message) error {
 	// store
 }
 
-....
+...
 
 // Runner starts processing
 func Run(ctx context.Context) error {
@@ -58,7 +58,7 @@ func Run(ctx context.Context) error {
 		extractor.OutputCh(),
 		controller.Transform,
 		etl.TransformerWithConcurrency(10),
-        etl.TransformerWithFailOnErr(true),
+        etl.TransformerWithFailOnErr(false),
 		etl.TransformerWithOnErrorHook(controller.OnTransformerError),
 		etl.TransformerWithOnCompleteHook(controller.OnTransformerComplete),
 		etl.TransformerWithOutputChannelBufferSize(10),
@@ -81,20 +81,22 @@ func Run(ctx context.Context) error {
 
 Sometimes it is not efficient to store every processing result efficiently. To address this issue, you can leverage `LoaderBatched` as follows:
 
-```
-    ...
+```go
+...
+   
+// pipeline configuration
 
-    loader := etl.NewLoaderBatched(
-    		transformer.OutputCh(),
-    		controller.Load,
-    		etl.LoaderBatchedWithConcurrency(10),
-		    etl.LoaderWithFailOnErr(true),
-    		etl.LoaderBatchedWithOnCompleteHook(controller.OnLoaderBatchedCompleteHook),
-    		etl.LoaderBatchedWithOnErrorHook(controller.OnLoaderBatchedErrorHook),
-            etl.LoaderBatchedWithMaxItemsBatcher(100),
-    	)
+loader := etl.NewLoaderBatched(
+        transformer.OutputCh(),
+        controller.Load,
+        etl.LoaderBatchedWithConcurrency(10),
+        etl.LoaderWithFailOnErr(true),
+        etl.LoaderBatchedWithOnCompleteHook(controller.OnLoaderBatchedCompleteHook),
+        etl.LoaderBatchedWithOnErrorHook(controller.OnLoaderBatchedErrorHook),
+        etl.LoaderBatchedWithMaxItemsBatcher(100),
+    )
 
-    ...
+...
 ```
 
 Following batching strategies are available:
@@ -107,12 +109,92 @@ Following batching strategies are available:
 
 If none of those option has been selected, `etl.LoaderBatchedWithFixedSizeBatches` will be used with a maximum of 1 message per batch. 
 
+## Advanced transformers
+
+When your transformer might produce two or more possible outcomes, you might use `TransformerDemux` that allows you to develop arbitrary number of processing tracks.
+
+```go
+...   
+
+// controller
+
+func (c *Controller) Transform(ctx context.Context, inMsg etl.Message, sender etl.Sender) error {
+    // process
+    data1, data2 = process(inMsg)
+
+    // send to first output channel
+    err := sender.SendCh(ctx, 0, data1)
+    if err != nil {
+        return
+    }
+
+    // send to second output channel
+    err = sender.SendCh(ctx, 1, data2)
+    if err != nil {
+        return
+    }
+    
+    return nil
+}
+
+...
+
+// pipeline configuration
+
+transformer := etl.NewTransformerDemux(
+    extractor.OutputCh(),
+    controller.Transform,
+    2, // number of output channels
+    etl.TransformerWithConcurrency(10),
+    etl.TransformerWithFailOnErr(false),
+    etl.TransformerWithOnErrorHook(controller.OnTransformerError),
+    etl.TransformerWithOnCompleteHook(controller.OnTransformerComplete),
+    etl.TransformerWithOutputChannelBufferSize(10),
+)
+
+// then you can specify output channel like that: transformer.OutputCh(0), transformer.OutputCh(1) 
+``` 
+
+## Observability
+
+Having an insight into production state of a pipeline might be critical for successfully running pipeline in production environment. `go-etl` allows injecting hooks, where you can perform logging, instrumentation, etc.
+
+```go
+// controller
+
+func (c *Controller) OnLoaderCompletefunc(ctx context.Context, inMsg Message) {
+	c.metrics.ProcessingCompleted(
+        time.Since(inMsg.ProcessingStartedAt()).Seconds()
+    )
+}
+
+func (c *Controller) OnLoaderErrorHook(ctx context.Context, inMsg Message, err error) {
+    c.log.Error(err.String())
+
+	c.metrics.ProcessingFailed()
+}
+
+...
+
+// pipeline configuration
+
+loader := etl.NewLoader(
+    transformer.OutputCh(),
+    controller.Load,
+    etl.LoaderWithConcurrency(10),
+    etl.LoaderWithFailOnErr(true),
+    etl.LoaderWithOnCompleteHook(controller.OnLoaderCompleteHook),
+    etl.LoaderWithOnErrorHook(controller.OnLoaderErrorHook),
+)
+```
+
+## License
+
+MIT 
+
 ## ToDo
 
 - [ ] Add logger support
 - [ ] When "failing" by default is disabled and there are no error hooks, log errors
-- [ ] Add docs about Metrics, advanced Transformers
 - [ ] Add transformer tests
-- [ ] Add loader tests
-- [ ] Add queue tests
 - [ ] Add GoDoc comments
