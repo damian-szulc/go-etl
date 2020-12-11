@@ -88,40 +88,34 @@ func (l *LoaderBatched) onCompleteHook(ctx context.Context, inMsgs []Message) er
 func (l *LoaderBatched) runWorker(ctx context.Context) error {
 	var (
 		inMsgs []Message
-		inMsg  Message
-		ok     bool
 		opErr  error
 		err    error
 	)
 	for {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case inMsg, ok = <-l.inputCh:
-			if !ok {
-				return nil
-			}
+		inMsgs, err = l.opts.batcher(ctx, l.inputCh)
+		if err != nil {
+			return err
+		}
 
-			inMsgs = l.opts.batcher(ctx, l.inputCh)
-			inMsgs = append(inMsgs, inMsg)
+		if len(inMsgs) == 0 {
+			return nil
+		}
 
-			opErr = l.handler(ctx, inMsgs)
-			if opErr != nil {
-				err = l.onErrorHook(ctx, inMsgs, opErr)
-				if err != nil {
-					return errors.Wrap(err, "running batched loader on error hook has failed")
-				}
-
-				if l.opts.failOnErr {
-					return opErr
-				}
-			}
-
-			err = l.onCompleteHook(ctx, inMsgs)
+		opErr = l.handler(ctx, inMsgs)
+		if opErr != nil {
+			err = l.onErrorHook(ctx, inMsgs, opErr)
 			if err != nil {
-				return errors.Wrap(err, "failed to run loader onComplete hook")
+				return errors.Wrap(err, "running batched loader on error hook has failed")
 			}
 
+			if l.opts.failOnErr {
+				return opErr
+			}
+		}
+
+		err = l.onCompleteHook(ctx, inMsgs)
+		if err != nil {
+			return errors.Wrap(err, "failed to run loader onComplete hook")
 		}
 	}
 }

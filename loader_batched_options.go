@@ -18,7 +18,7 @@ type loaderBatchedOptions struct {
 
 func newLoaderBatchedOptions(optsSetters ...LoaderBatchedOption) *loaderBatchedOptions {
 	opts := &loaderBatchedOptions{
-		batcher:     func(ctx context.Context, inMsgCh <-chan Message) []Message { return nil },
+		batcher:     defaultLoaderBatcher,
 		concurrency: 1,
 		failOnErr:   true,
 	}
@@ -60,69 +60,200 @@ func LoaderBatchedWithFailOnError(failOnErr bool) LoaderBatchedOption {
 	return func(o *loaderBatchedOptions) { o.failOnErr = failOnErr }
 }
 
-type LoaderBatcher func(ctx context.Context, inMsgCh <-chan Message) []Message
+type LoaderBatcher func(ctx context.Context, inMsgCh <-chan Message) ([]Message, error)
 
-func LoaderBatchedWithChannelBatcher(maxItems int) LoaderBatchedOption {
+func LoaderBatchedWithBatcher(batcher LoaderBatcher) LoaderBatchedOption {
 	return func(o *loaderBatchedOptions) {
-		o.batcher = func(ctx context.Context, inMsgCh <-chan Message) []Message {
-			var (
-				messages = make([]Message, 0, maxItems-1)
-				inMsg    Message
-				ok       bool
-			)
-			for {
-				if len(messages) >= maxItems-1 {
-					return messages
-				}
-
-				select {
-				case <-ctx.Done():
-					return messages
-				case inMsg, ok = <-inMsgCh:
-					if !ok {
-						return messages
-					}
-
-					messages = append(messages, inMsg)
-				default:
-					return messages
-				}
-			}
-
-			return messages
-		}
+		o.batcher = batcher
 	}
 }
 
-func LoaderBatchedWithChannelTimeBatcher(tickerInterval time.Duration, maxItems int) LoaderBatchedOption {
-	return func(o *loaderBatchedOptions) {
-		o.batcher = func(ctx context.Context, inMsgCh <-chan Message) []Message {
-			var (
-				messages = make([]Message, 0, maxItems-1)
-				ticker   = time.NewTimer(tickerInterval)
-				inMsg    Message
-				ok       bool
-			)
-			for {
-				if len(messages) >= maxItems-1 {
-					return messages
+func LoaderBatchedWithFixedSizeBatches(maxItems int) LoaderBatchedOption {
+	return LoaderBatchedWithBatcher(func(ctx context.Context, inMsgCh <-chan Message) ([]Message, error) {
+		var (
+			messages = make([]Message, 0, maxItems)
+			inMsg    Message
+			ok       bool
+		)
+		for {
+			if len(messages) >= maxItems {
+				return messages, nil
+			}
+
+			select {
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			case inMsg, ok = <-inMsgCh:
+				if !ok {
+					return messages, nil
 				}
 
+				messages = append(messages, inMsg)
+			}
+		}
+
+		return messages, nil
+	})
+}
+
+func LoaderBatchedWithDrainedChannelBatches(maxItems int) LoaderBatchedOption {
+	return LoaderBatchedWithBatcher(func(ctx context.Context, inMsgCh <-chan Message) ([]Message, error) {
+		var (
+			messages = make([]Message, 0, maxItems)
+			inMsg    Message
+			ok       bool
+		)
+		for {
+			if len(messages) >= maxItems {
+				return messages, nil
+			}
+
+			if len(messages) == 0 {
 				select {
 				case <-ctx.Done():
-					return messages
+					return nil, ctx.Err()
 				case inMsg, ok = <-inMsgCh:
 					if !ok {
-						return messages
+						return messages, nil
 					}
 
 					messages = append(messages, inMsg)
-				case <-ticker.C:
-					return messages
 				}
+
+				continue
 			}
 
-			return messages
+			select {
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			case inMsg, ok = <-inMsgCh:
+				if !ok {
+					return messages, nil
+				}
+
+				messages = append(messages, inMsg)
+			default:
+				return messages, nil
+			}
+		}
+
+		return messages, nil
+	})
+}
+
+func LoaderBatchedWithThrottledBatches(interval time.Duration, maxItems int) LoaderBatchedOption {
+	return LoaderBatchedWithBatcher(func(ctx context.Context, inMsgCh <-chan Message) ([]Message, error) {
+		var (
+			messages = make([]Message, 0, maxItems)
+			inMsg    Message
+			ticker   *time.Timer
+			ok       bool
+		)
+		for {
+			select {
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			case inMsg, ok = <-inMsgCh:
+				if !ok {
+					return nil, nil
+				}
+
+				messages = append(messages, inMsg)
+
+				ticker = time.NewTimer(interval)
+
+				for {
+					if len(messages) >= maxItems {
+						return messages, nil
+					}
+
+					select {
+					case <-ctx.Done():
+						return nil, ctx.Err()
+					case inMsg, ok = <-inMsgCh:
+						if !ok {
+							// channel closed. There's not going to be any new messages. But return what we have buffered
+							return messages, nil
+						}
+
+						messages = append(messages, inMsg)
+					case <-ticker.C:
+						return messages, nil
+					}
+				}
+
+				return messages, nil
+			}
+		}
+	})
+}
+
+func LoaderBatchedWithDebouncedBatches(interval time.Duration, maxItems int) LoaderBatchedOption {
+	return LoaderBatchedWithBatcher(func(ctx context.Context, inMsgCh <-chan Message) ([]Message, error) {
+		var (
+			messages = make([]Message, 0, maxItems)
+			inMsg    Message
+			ticker   *time.Timer
+			ok       bool
+		)
+		for {
+			select {
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			case inMsg, ok = <-inMsgCh:
+				if !ok {
+					return nil, nil
+				}
+
+				messages = append(messages, inMsg)
+
+				ticker = time.NewTimer(interval)
+
+				for {
+					if len(messages) >= maxItems {
+						return messages, nil
+					}
+
+					ticker.Reset(interval)
+
+					select {
+					case <-ctx.Done():
+						return nil, ctx.Err()
+					case inMsg, ok = <-inMsgCh:
+						if !ok {
+							// channel closed. There's not going to be any new messages. But return what we have buffered
+							return messages, nil
+						}
+
+						messages = append(messages, inMsg)
+					case <-ticker.C:
+						return messages, nil
+					}
+				}
+
+				return messages, nil
+			}
+		}
+	})
+}
+
+func defaultLoaderBatcher(ctx context.Context, inMsgCh <-chan Message) ([]Message, error) {
+	var (
+		inMsg Message
+		ok    bool
+	)
+	for {
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case inMsg, ok = <-inMsgCh:
+			if !ok {
+				return nil, nil
+			}
+
+			return []Message{inMsg}, nil
 		}
 	}
+
+	return nil, nil
 }

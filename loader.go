@@ -40,6 +40,7 @@ func (l *Loader) preRunHooks(ctx context.Context) error {
 	return nil
 }
 
+// Run loader with a specified context. Note that execution of this function is blocking, until processing is finished.
 func (l *Loader) Run(ctx context.Context) error {
 	err := l.preRunHooks(ctx)
 	if err != nil {
