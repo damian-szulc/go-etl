@@ -1,9 +1,12 @@
 package queue
 
-import "github.com/damian-szulc/go-etl"
+import (
+	"context"
+	"github.com/damian-szulc/go-etl"
+)
 
 type Driver interface {
 	etl.Runner
 	OutputCh() <-chan etl.Message
-	Enqueue(data etl.Message)
+	Enqueue(ctx context.Context, data etl.Message) error
 }

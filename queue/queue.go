@@ -7,7 +7,8 @@ import (
 )
 
 type Queue struct {
-	driver  Driver
+	driver Driver
+
 	inputCh <-chan etl.Message
 }
 
@@ -19,7 +20,7 @@ func New(inputCh <-chan etl.Message, opts ...Option) *Queue {
 	queue = applyQueueOptions(queue, opts...)
 
 	if queue.driver == nil {
-		queue.driver = NewDriverDefault()
+		queue.driver = NewDriverDefault(nil, nil)
 	}
 
 	return queue
@@ -33,6 +34,7 @@ func (q *Queue) enquer(ctx context.Context) error {
 	var (
 		msg etl.Message
 		ok  bool
+		err error
 	)
 	for {
 		select {
@@ -43,7 +45,10 @@ func (q *Queue) enquer(ctx context.Context) error {
 				return nil
 			}
 
-			q.driver.Enqueue(msg)
+			err = q.driver.Enqueue(ctx, msg)
+			if err != nil {
+				return err
+			}
 		}
 	}
 
